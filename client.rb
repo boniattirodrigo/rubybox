@@ -21,16 +21,36 @@ class Client
         msg = @server.gets.chomp.split(': ')
 
         filename = msg.first
+        event = msg[1]
         bits = msg.last
+        file_dir = "#{@dir}/#{filename}"
 
-        File.open("#{@dir}/#{filename}", 'wb') do|f|
-          f.write([bits].pack("B*"))
+        if event == 'deleted'
+          delete_file(file_dir)
+        else
+          create_or_update_file(file_dir, bits)
         end
       }
     end
   end
 
   def send
+    join_user
+
+    @request = Thread.new do
+      Filewatcher.new(@dir).watch do |filename, event|
+        if event == :deleted
+          send_delete_file_message(filename)
+        else
+          send_create_or_update_file_message(filename, event)
+        end
+      end
+    end
+  end
+
+  private
+
+  def join_user
     puts "Enter the username:"
     username = $stdin.gets.chomp
 
@@ -38,23 +58,36 @@ class Client
     @dir = $stdin.gets.chomp
 
     @server.puts(username)
+  end
 
-    @request = Thread.new do
-      Filewatcher.new(@dir).watch do |filename, event|
-        digested_file = digest(filename)
-        puts digested_file
+  def remove_path_for(filename)
+    filename.split(@dir).last
+  end
 
-        unless @list.include? digested_file
-          @list << digested_file
-          s = File.binread(filename)
-          bits = s.unpack("B*").first
-          file = filename.split(@dir).last
+  def send_delete_file_message(filename)
+    file = remove_path_for(filename)
+    @server.puts("#{file}: deleted")
+  end
 
-          message = "#{file}: #{event}: #{bits}"
-          @server.puts(message)
-        end
-      end
+  def send_create_or_update_file_message(filename, event)
+    digested_file = digest(filename)
+
+    unless @list.include? digested_file
+      @list << digested_file
+      binread_file = File.binread(filename)
+      bits = binread_file.unpack("B*").first
+      file = remove_path_for(filename)
+
+      @server.puts("#{file}: #{event}: #{bits}")
     end
+  end
+
+  def delete_file(filename)
+    File.delete(filename) if File.exists?(filename)
+  end
+
+  def create_or_update_file(file_dir, bits)
+    File.open(file_dir, 'wb') { |f| f.write([bits].pack("B*")) }
   end
 
   def digest(file_dir)
@@ -64,5 +97,5 @@ class Client
   end
 end
 
-server = TCPSocket.open( "localhost", 3000 )
-Client.new( server )
+server = TCPSocket.open('localhost', 3000)
+Client.new(server)

@@ -30,7 +30,8 @@ class Server
   def listen_user_messages(username, client)
     loop {
       msg = client.gets.chomp
-      puts msg
+      client_message = msg.split(": ")
+      puts "File: #{client_message[0]} | Event: #{client_message[1]}"
 
       @connections[:clients].each do |other_name, other_client|
         unless other_name == username
