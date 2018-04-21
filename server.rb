@@ -1,16 +1,20 @@
 require 'socket'
+require './file_manager'
 
 class Server
-  def initialize( port, ip )
-    @server = TCPServer.open( ip, port )
+  def initialize(port, ip)
+    @server = TCPServer.open(ip, port)
     @connections = Hash.new
     @clients = Hash.new
     @connections[:server] = @server
     @connections[:clients] = @clients
+    @dir = nil
     run
   end
 
   def run
+    set_dir
+
     loop {
       Thread.start(@server.accept) do | client |
         nick_name = client.gets.chomp.to_sym
@@ -31,7 +35,18 @@ class Server
     loop {
       msg = client.gets.chomp
       client_message = msg.split(": ")
-      puts "File: #{client_message[0]} | Event: #{client_message[1]}"
+
+      filename = client_message.first
+      event = client_message[1]
+      bits = client_message.last
+      file_dir = "#{@dir}/#{filename}"
+
+      if event == 'deleted'
+        FileManager.delete(file_dir)
+      else
+        FileManager.create_or_update(file_dir, bits)
+      end
+      puts "File: #{filename} | Event: #{event}"
 
       @connections[:clients].each do |other_name, other_client|
         unless other_name == username
@@ -39,6 +54,12 @@ class Server
         end
       end
     }
+  end
+
+  def set_dir
+    puts 'Set up the directory where the server will save the synced files:'
+
+    @dir = $stdin.gets.chomp
   end
 end
 
