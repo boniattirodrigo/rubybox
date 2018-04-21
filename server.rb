@@ -1,7 +1,10 @@
 require 'socket'
 require './file_manager'
+require './file_notifier'
 
 class Server
+  include FileNotifier
+
   def initialize(port, ip)
     @server = TCPServer.open(ip, port)
     @connections = Hash.new
@@ -9,6 +12,7 @@ class Server
     @connections[:server] = @server
     @connections[:clients] = @clients
     @dir = nil
+    @files = {}
     run
   end
 
@@ -18,7 +22,7 @@ class Server
     loop {
       Thread.start(@server.accept) do | client |
         nick_name = client.gets.chomp.to_sym
-        @connections[:clients].each do |other_name, other_client|
+        @connections[:clients].each do | other_name, other_client |
           if nick_name == other_name || client == other_client
             Thread.kill self
           end
@@ -26,7 +30,12 @@ class Server
 
         puts "#{nick_name} #{client}"
         @connections[:clients][nick_name] = client
-        listen_user_messages( nick_name, client )
+
+        @files.each do | filename, _ |
+          send_create_or_update_file_message("#{@dir}/#{filename}", 'created', client)
+        end
+
+        listen_user_messages(nick_name, client)
       end
     }.join
   end
@@ -38,19 +47,25 @@ class Server
 
       filename = client_message.first
       event = client_message[1]
-      bits = client_message.last
-      file_dir = "#{@dir}/#{filename}"
+      bits = client_message[2]
+      digested_file = client_message[3]
 
-      if event == 'deleted'
-        FileManager.delete(file_dir)
-      else
-        FileManager.create_or_update(file_dir, bits)
-      end
-      puts "File: #{filename} | Event: #{event}"
+      unless @files.key?(filename)
+        @files[filename] = digested_file
+        puts "#{username} | #{event} | #{filename}"
 
-      @connections[:clients].each do |other_name, other_client|
-        unless other_name == username
-          other_client.puts msg
+        file_dir = "#{@dir}/#{filename}"
+
+        if event == 'deleted'
+          FileManager.delete(file_dir)
+        else
+          FileManager.create_or_update(file_dir, bits)
+        end
+
+        @connections[:clients].each do |other_name, other_client|
+          unless other_name == username
+            other_client.puts msg
+          end
         end
       end
     }

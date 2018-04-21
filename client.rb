@@ -21,11 +21,12 @@ class Client
   def listen
     @response = Thread.new do
       loop {
-        msg = @server.gets.chomp.split(': ')
+        msg = @server.gets.chomp
+        client_message = msg.split(': ')
 
-        filename = msg.first
-        event = msg[1]
-        bits = msg.last
+        filename = client_message.first
+        event = client_message[1]
+        bits = client_message[2]
         file_dir = "#{@dir}/#{filename}"
 
         if event == 'deleted'
@@ -43,9 +44,9 @@ class Client
     @request = Thread.new do
       Filewatcher.new(@dir).watch do |filename, event|
         if event == :deleted
-          send_delete_file_message(filename)
+          send_delete_file_message(filename, @server)
         else
-          send_create_or_update_file_message(filename, event)
+          send_create_or_update_file_message(filename, event, @server)
         end
       end
     end

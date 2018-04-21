@@ -1,22 +1,18 @@
 require 'digest'
 
 module FileNotifier
-  def send_delete_file_message(filename)
+  def send_delete_file_message(filename, destination)
     file = remove_path_for(filename)
-    @server.puts("#{file}: deleted")
+    destination.puts("#{file}: deleted")
   end
 
-  def send_create_or_update_file_message(filename, event)
+  def send_create_or_update_file_message(filename, event, destination)
     digested_file = digest(filename)
+    binread_file = File.binread(filename)
+    bits = binread_file.unpack("B*").first
+    file = remove_path_for(filename)
 
-    unless @list.include? digested_file
-      @list << digested_file
-      binread_file = File.binread(filename)
-      bits = binread_file.unpack("B*").first
-      file = remove_path_for(filename)
-
-      @server.puts("#{file}: #{event}: #{bits}")
-    end
+    destination.puts("#{file}: #{event}: #{bits}: #{digested_file}")
   end
 
   private
@@ -26,8 +22,6 @@ module FileNotifier
   end
 
   def digest(filename)
-    sha256 = Digest::SHA256.file filename
-    file_name_digested = Digest::SHA256.hexdigest filename
-    Digest::SHA256.hexdigest "#{file_name_digested}#{sha256.hexdigest}"
+    Digest::SHA256.file(filename).hexdigest
   end
 end
