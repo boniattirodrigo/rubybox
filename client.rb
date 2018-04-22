@@ -11,7 +11,7 @@ class Client
     @request = nil
     @response = nil
     @dir = nil
-    @list = []
+    @files = {}
     listen
     send
     @request.join
@@ -22,6 +22,7 @@ class Client
     @response = Thread.new do
       loop {
         msg = @server.gets.chomp
+        puts msg
         client_message = msg.split(': ')
 
         filename = client_message.first
@@ -43,9 +44,18 @@ class Client
 
     @request = Thread.new do
       Filewatcher.new(@dir).watch do |filename, event|
+        @files.each do | file, content |
+          if event == :created && content == FileManager.digest(filename) && filename != file && !File.exists?(file)
+            @files.delete(file)
+            send_delete_file_message(file, @server)
+          end
+        end
+
         if event == :deleted
+          @files.delete(filename)
           send_delete_file_message(filename, @server)
         else
+          @files[filename] = FileManager.digest(filename)
           send_create_or_update_file_message(filename, event, @server)
         end
       end

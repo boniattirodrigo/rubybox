@@ -17,61 +17,82 @@ class Server
   end
 
   def run
-    set_dir
+    set_up_server_directory
 
     loop {
-      Thread.start(@server.accept) do | client |
-        nick_name = client.gets.chomp.to_sym
-        @connections[:clients].each do | other_name, other_client |
-          if nick_name == other_name || client == other_client
-            Thread.kill self
-          end
-        end
-
-        puts "#{nick_name} #{client}"
-        @connections[:clients][nick_name] = client
-
-        @files.each do | filename, _ |
-          send_create_or_update_file_message("#{@dir}/#{filename}", 'created', client)
-        end
-
-        listen_user_messages(nick_name, client)
+      Thread.start(@server.accept) do | socket |
+        username = socket.gets.chomp.to_sym
+        check_if_client_already_is_registered!(username, socket)
+        register_client(username, socket)
+        send_all_files_to_the_new_client(socket)
+        listen_client_messages(username, socket)
       end
     }.join
   end
 
-  def listen_user_messages(username, client)
+  def listen_client_messages(username, socket)
     loop {
-      msg = client.gets.chomp
-      client_message = msg.split(": ")
+      message = socket.gets.chomp
+      client_message = message.split(': ')
 
       filename = client_message.first
       event = client_message[1]
       bits = client_message[2]
       digested_file = client_message[3]
 
-      unless @files.key?(filename)
-        @files[filename] = digested_file
+      if !@files.key?(filename) || event == 'deleted' || (@files.key?(filename) && @files[filename] != digested_file)
         puts "#{username} | #{event} | #{filename}"
 
-        file_dir = "#{@dir}/#{filename}"
-
         if event == 'deleted'
-          FileManager.delete(file_dir)
+          @files.delete(filename)
         else
-          FileManager.create_or_update(file_dir, bits)
+          @files[filename] = digested_file
         end
 
-        @connections[:clients].each do |other_name, other_client|
-          unless other_name == username
-            other_client.puts msg
-          end
-        end
+        update_file_in_server(filename, event, bits)
+        broadcast(from_username: username, with_message: message)
       end
     }
   end
 
-  def set_dir
+  private
+
+  def check_if_client_already_is_registered!(username, socket)
+    @connections[:clients].each do | client_username, client_socket |
+      if username == client_username || socket == client_socket
+        Thread.kill self
+      end
+    end
+  end
+
+  def register_client(username, socket)
+    puts "#{username} #{socket}"
+    @connections[:clients][username] = socket
+  end
+
+  def update_file_in_server(filename, event, bits)
+    file_dir = "#{@dir}/#{filename}"
+
+    if event == 'deleted'
+      FileManager.delete(file_dir)
+    else
+      FileManager.create_or_update(file_dir, bits)
+    end
+  end
+
+  def broadcast(from_username:, with_message:)
+    @connections[:clients].each do | client_username, client_socket |
+      client_socket.puts with_message if client_username != from_username
+    end
+  end
+
+  def send_all_files_to_the_new_client(socket)
+    @files.each do | filename, _ |
+      send_create_or_update_file_message("#{@dir}/#{filename}", 'created', socket)
+    end
+  end
+
+  def set_up_server_directory
     puts 'Set up the directory where the server will save the synced files:'
 
     @dir = $stdin.gets.chomp

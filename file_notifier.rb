@@ -1,4 +1,4 @@
-require 'digest'
+require './file_manager'
 
 module FileNotifier
   def send_delete_file_message(filename, destination)
@@ -7,7 +7,7 @@ module FileNotifier
   end
 
   def send_create_or_update_file_message(filename, event, destination)
-    digested_file = digest(filename)
+    digested_file = FileManager.digest(filename)
     binread_file = File.binread(filename)
     bits = binread_file.unpack("B*").first
     file = remove_path_for(filename)
@@ -19,9 +19,5 @@ module FileNotifier
 
   def remove_path_for(filename)
     filename.split(@dir).last
-  end
-
-  def digest(filename)
-    Digest::SHA256.file(filename).hexdigest
   end
 end
