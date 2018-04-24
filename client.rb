@@ -71,7 +71,18 @@ class Client
     puts "Enter the directory where you will sync your files:"
     @dir = $stdin.gets.chomp
 
+    initial_files = Dir.glob("#{@dir}/*.*")
+
     @server.puts(username)
+
+    send_all_files_to_server(initial_files)
+  end
+
+  def send_all_files_to_server(files)
+    files.each do |filename|
+      @files[filename] = FileManager.digest(filename)
+      send_create_or_update_file_message(filename, :created, @server)
+    end
   end
 end
 
