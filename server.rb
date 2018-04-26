@@ -1,6 +1,7 @@
 require 'socket'
 require './file_manager'
 require './file_notifier'
+require './message'
 
 class Server
   include FileNotifier
@@ -32,25 +33,20 @@ class Server
 
   def listen_client_messages(username, socket)
     loop {
-      message = socket.gets.chomp
-      client_message = message.split(': ')
+      string_message = socket.gets.chomp
+      message = Message.new(string_message)
 
-      filename = client_message.first
-      event = client_message[1]
-      bits = client_message[2]
-      digested_file = client_message[3]
+      if sync_file?(message)
+        puts "#{username} | #{message.event.to_s} | #{message.filename}"
 
-      if !@files.key?(filename) || event == 'deleted' || (@files.key?(filename) && @files[filename] != digested_file)
-        puts "#{username} | #{event} | #{filename}"
-
-        if event == 'deleted'
-          @files.delete(filename)
+        if message.event == :deleted
+          @files.delete(message.filename)
         else
-          @files[filename] = digested_file
+          @files[message.filename] = message.digested_file
         end
 
-        update_file_in_server(filename, event, bits)
-        broadcast(from_username: username, with_message: message)
+        update_file_in_the_server(message.filename, message.event, message.bits)
+        broadcast(from_username: username, with_message: string_message)
       end
     }
   end
@@ -70,10 +66,10 @@ class Server
     @connections[:clients][username] = socket
   end
 
-  def update_file_in_server(filename, event, bits)
+  def update_file_in_the_server(filename, event, bits)
     file_dir = "#{@dir}/#{filename}"
 
-    if event == 'deleted'
+    if event == :deleted
       FileManager.delete(file_dir)
     else
       FileManager.create_or_update(file_dir, bits)
@@ -96,6 +92,15 @@ class Server
     puts 'Set up the directory where the server will save the synced files:'
 
     @dir = $stdin.gets.chomp
+  end
+
+  def sync_file?(message)
+    puts @files
+    new_file = !@files.key?(message.filename)
+    file_deleted = message.event == :deleted
+    file_updated = @files.key?(message.filename) && @files[message.filename] != message.digested_file
+
+    new_file || file_deleted || file_updated
   end
 end
 

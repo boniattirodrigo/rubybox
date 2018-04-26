@@ -2,11 +2,12 @@ require 'filewatcher'
 require 'socket'
 require './file_manager'
 require './file_notifier'
+require './message'
 
 class Client
   include FileNotifier
 
-  def initialize( server )
+  def initialize(server)
     @server = server
     @request = nil
     @response = nil
@@ -21,19 +22,14 @@ class Client
   def listen
     @response = Thread.new do
       loop {
-        msg = @server.gets.chomp
-        puts msg
-        client_message = msg.split(': ')
+        string_message = @server.gets.chomp
+        message = Message.new(string_message)
+        file_dir = "#{@dir}/#{message.filename}"
 
-        filename = client_message.first
-        event = client_message[1]
-        bits = client_message[2]
-        file_dir = "#{@dir}/#{filename}"
-
-        if event == 'deleted'
+        if message.event == :deleted
           FileManager.delete(file_dir)
         else
-          FileManager.create_or_update(file_dir, bits)
+          FileManager.create_or_update(file_dir, message.bits)
         end
       }
     end
@@ -43,13 +39,8 @@ class Client
     join
 
     @request = Thread.new do
-      Filewatcher.new(@dir).watch do |filename, event|
-        @files.each do | file, content |
-          if event == :created && content == FileManager.digest(filename) && filename != file && !File.exists?(file)
-            @files.delete(file)
-            send_delete_file_message(file, @server)
-          end
-        end
+      Filewatcher.new("#{@dir}/*.*").watch do |filename, event|
+        check_if_file_was_renamed(filename, event)
 
         if event == :deleted
           @files.delete(filename)
@@ -82,6 +73,21 @@ class Client
     files.each do |filename|
       @files[filename] = FileManager.digest(filename)
       send_create_or_update_file_message(filename, :created, @server)
+    end
+  end
+
+  def check_if_file_was_renamed(filename, event)
+    @files.each do |file, content|
+      new_file = event == :created
+      return nil unless new_file
+      same_content = content == FileManager.digest(filename)
+      diferent_filename = filename != file
+      was_removed = !File.exists?(file)
+
+      if new_file && same_content && diferent_filename && was_removed
+        @files.delete(file)
+        send_delete_file_message(file, @server)
+      end
     end
   end
 end
